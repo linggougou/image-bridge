@@ -7,6 +7,20 @@ ChatGPT tab in normal Chrome through a local extension bridge.
 The repository stays independent from FlowWeave. FlowWeave remains a reference
 for browser automation patterns, not a runtime dependency.
 
+## 让 Agent 帮你搭好
+
+把本仓库链接发给你的 coding agent（Codex / Claude Code 等），并说：
+
+> 按这个仓库的 `AGENTS.md` 在本地把这套流程搭好，然后用 `status` 验证。
+
+仓库根目录的 [AGENTS.md](AGENTS.md) 是写给 agent 的执行说明：前置条件、逐条搭建命令、
+验证方法、使用契约、错误码语义与常见故障处理。需要人做的只有两件不可自动化的事：
+
+1. 在 Chrome 里登录 ChatGPT
+2. 在 `chrome://extensions` 里加载本仓库的 `extension/` 目录并填入桥 token
+
+安全边界、权限范围与合规责任见 [SECURITY.md](SECURITY.md)。
+
 ## Requirements
 
 - Node.js 20 or newer
