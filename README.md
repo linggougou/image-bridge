@@ -21,6 +21,11 @@ for browser automation patterns, not a runtime dependency.
 
 安全边界、权限范围与合规责任见 [SECURITY.md](SECURITY.md)。
 
+## 交给 Agent 使用
+
+已有环境、只想让 agent 调用本工具时，把 [docs/agent-usage.md](docs/agent-usage.md) 交给它即可——
+那是独立文档，不需读本仓库其余内容，含调用命令、返回契约、错误码处理表与硬性规则。
+
 ## Requirements
 
 - Node.js 20 or newer
