@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Gemini session expiry fixture</title>
+  </head>
+  <body>
+    <main>
+      <div contenteditable="true" role="textbox"></div>
+      <button id="send" type="button" aria-label="Send">Send</button>
+      <model-response>old response</model-response>
+    </main>
+    <script>
+      document.querySelector("#send").addEventListener("click", () => {
+        setTimeout(() => {
+          document.body.innerHTML = "<button type='button'>Sign in</button>";
+        }, 300);
+      });
+    </script>
+  </body>
+</html>

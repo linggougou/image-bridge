@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Gemini fixture</title>
+  </head>
+  <body>
+    <main>
+      <div id="composer" contenteditable="true" role="textbox"></div>
+      <button id="send" type="button" aria-label="Send">Send</button>
+      <section id="responses">
+        <model-response id="old-response">
+          <img id="old-image" alt="old generated image" />
+        </model-response>
+      </section>
+    </main>
+    <script>
+      const canvas = document.createElement("canvas");
+      canvas.width = 256;
+      canvas.height = 256;
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#2f7d5c";
+      context.fillRect(0, 0, 256, 256);
+      const dataUrl = canvas.toDataURL("image/png");
+      document.querySelector("#old-image").src = dataUrl;
+
+      document.querySelector("#send").addEventListener("click", () => {
+        const response = document.createElement("model-response");
+        response.id = "new-response";
+        const image = document.createElement("img");
+        image.id = "new-image";
+        image.alt = "new generated image";
+        image.src = dataUrl;
+        response.appendChild(image);
+        document.querySelector("#responses").appendChild(response);
+      });
+    </script>
+  </body>
+</html>
+

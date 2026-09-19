@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ChatGPT session expiry fixture</title>
+  </head>
+  <body>
+    <main>
+      <div id="prompt-textarea" contenteditable="true" role="textbox"></div>
+      <button id="composer-submit-button" type="button" aria-label="Send">Send</button>
+    </main>
+    <script>
+      document.querySelector("#composer-submit-button").addEventListener("click", () => {
+        setTimeout(() => {
+          document.body.innerHTML = "<button type='button'>Log in</button>";
+        }, 300);
+      });
+    </script>
+  </body>
+</html>

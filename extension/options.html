@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Image Bridge</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Image Bridge</h1>
+      <p>将专用 ChatGPT 标签页连接到本地 image-bridge 服务。</p>
+      <label>
+        本地服务地址
+        <input id="bridgeUrl" type="url" value="http://127.0.0.1:47831" />
+      </label>
+      <label>
+        Bridge token
+        <input id="token" type="password" autocomplete="off" />
+      </label>
+      <div class="actions">
+        <button id="save" type="button">保存</button>
+        <button id="test" type="button">测试连接</button>
+        <button id="open" type="button">打开专用 ChatGPT 标签页</button>
+      </div>
+      <pre id="status">正在读取配置...</pre>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

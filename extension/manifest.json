@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Image Bridge ChatGPT Connector",
+  "version": "0.2.0",
+  "description": "Connects a dedicated ChatGPT tab to the local image-bridge daemon.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "https://chatgpt.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Image Bridge"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["chatgpt-main-world.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["content-core.js", "chatgpt-content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
