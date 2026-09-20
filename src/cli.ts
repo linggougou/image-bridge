@@ -18,6 +18,7 @@ type ParsedCli = {
   output?: string;
   inputPaths?: string[];
   backend?: string;
+  conversation?: string;
   force: boolean;
   headed: boolean;
   help: boolean;
@@ -33,6 +34,7 @@ function parseCli(argv: string[]): ParsedCli {
       output: { type: "string" },
       input: { type: "string", multiple: true },
       backend: { type: "string" },
+      conversation: { type: "string" },
       force: { type: "boolean", default: false },
       headed: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
@@ -46,6 +48,7 @@ function parseCli(argv: string[]): ParsedCli {
     output: values.output,
     inputPaths: values.input,
     backend: values.backend,
+    conversation: values.conversation,
     force: values.force ?? false,
     headed: values.headed ?? false,
     help: values.help ?? false,
@@ -60,7 +63,7 @@ Usage:
   image-bridge login --backend chatgpt
   image-bridge status
   image-bridge status --backend chatgpt
-  image-bridge generate --prompt "..." [--input ref.png ...] [--output path] [--force] [--headed] [--backend chatgpt]
+  image-bridge generate --prompt "..." [--input ref.png ...] [--output path] [--conversation auto|new|reuse] [--force] [--headed]
   image-bridge bridge
   image-bridge bridge token
 
@@ -179,6 +182,16 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
         ? resolve(process.cwd(), args.output)
         : backend.defaultOutputPath(config);
       const referenceImages = await loadReferenceImages(args.inputPaths ?? []);
+      if (
+        args.conversation &&
+        !["auto", "new", "reuse"].includes(args.conversation)
+      ) {
+        throw new ImageBridgeError(
+          "INVALID_ARGUMENT",
+          `不支持的 --conversation：${args.conversation}。支持 auto、new、reuse。`,
+        );
+      }
+
       const result = await backend.generate({
         config,
         prompt,
@@ -186,6 +199,9 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
         outputPath: requestedOutput,
         force: args.force,
         headless: args.headed ? false : config.headless,
+        ...(args.conversation
+          ? { conversationMode: args.conversation as "auto" | "new" | "reuse" }
+          : {}),
       });
       writeJsonResult(successResult("generate", result));
       return 0;

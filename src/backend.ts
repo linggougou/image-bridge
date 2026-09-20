@@ -23,6 +23,8 @@ import {
 } from "./chrome-extension-backend.js";
 import { defaultOutputPath, resolveOutputPath } from "./output.js";
 
+export type ConversationMode = "auto" | "new" | "reuse";
+
 export type BackendGenerateInput = {
   config: BridgeConfig;
   prompt: string;
@@ -30,6 +32,8 @@ export type BackendGenerateInput = {
   outputPath: string;
   force: boolean;
   headless: boolean;
+  /** Reference jobs: reuse an eligible conversation, force a new one, or require reuse. */
+  conversationMode?: ConversationMode;
 };
 
 export type ImageBackend = {

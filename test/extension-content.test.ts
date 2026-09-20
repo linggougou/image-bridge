@@ -748,4 +748,67 @@ describe("Chrome extension content script", () => {
     expect(await page.evaluate(() => globalThis.__sendCount)).toBe(0);
     await page.close();
   });
+  it("does not block a reference job when storage never resolves", async () => {
+    const page = await loadExtensionPage(
+      `<main>${composer}</main>`,
+      `
+        document.querySelector('#file-input').addEventListener('change', (event) => {
+          for (const file of event.target.files) {
+            const preview = document.createElement('div');
+            preview.dataset.testid = 'attachment-preview';
+            const image = document.createElement('img');
+            image.alt = 'Uploaded image';
+            image.src = URL.createObjectURL(file);
+            preview.appendChild(image);
+            document.querySelector('#attachments').appendChild(preview);
+          }
+        });
+        document.querySelector('#composer-submit-button').addEventListener('click', () => {
+          const userTurn = document.createElement('article');
+          userTurn.dataset.testid = 'conversation-turn-2';
+          const userMessage = document.createElement('div');
+          userMessage.dataset.messageAuthorRole = 'user';
+          for (const file of document.querySelector('#file-input').files) {
+            const attachment = document.createElement('div');
+            attachment.dataset.testid = 'attachment-preview';
+            const thumb = document.createElement('img');
+            thumb.alt = 'Uploaded image';
+            thumb.src = URL.createObjectURL(file);
+            attachment.appendChild(thumb);
+            userMessage.appendChild(attachment);
+          }
+          userTurn.appendChild(userMessage);
+          document.body.appendChild(userTurn);
+          const turn = document.createElement('article');
+          turn.dataset.testid = 'conversation-turn-3';
+          const message = document.createElement('div');
+          message.dataset.messageAuthorRole = 'assistant';
+          const image = document.createElement('img');
+          image.id = 'new-image';
+          image.src = 'data:image/png;base64,${pngBase64}';
+          image.width = 256;
+          image.height = 256;
+          message.appendChild(image);
+          turn.appendChild(message);
+          document.body.appendChild(turn);
+        });
+      `,
+    );
+    // Simulate the extension-context promise that never settles.
+    await page.evaluate(() => {
+      globalThis.chrome.storage.local.get = () => new Promise(() => {});
+      globalThis.chrome.storage.local.set = () => new Promise(() => {});
+      globalThis.chrome.storage.local.remove = () => new Promise(() => {});
+    });
+
+    const result = (await executeThroughContentScript(
+      page,
+      "use reference",
+      [{ name: "one.png", mimeType: "image/png", byteLength: 8, bytesBase64: pngBase64 }],
+      6000,
+    )) as { ok: boolean };
+
+    expect(result.ok).toBe(true);
+    await page.close();
+  });
 });

@@ -139,6 +139,7 @@ export async function generateWithChromeExtension(input: {
   outputPath: string;
   referenceImages: ReferenceImageInput[];
   headless: boolean;
+  conversationMode?: "auto" | "new" | "reuse";
 }): Promise<GeneratedImageResult> {
   const { config, prompt, outputPath, referenceImages } = input;
   const status = await getChromeExtensionStatus(config);
@@ -169,11 +170,12 @@ export async function generateWithChromeExtension(input: {
 
   // auto (default): reuse an eligible conversation with an identical ordered
   // reference set. new/reuse give callers explicit control.
-  const requestedMode = (process.env.IMAGE_BRIDGE_CONVERSATION || "").trim().toLowerCase();
+  const envMode = (process.env.IMAGE_BRIDGE_CONVERSATION || "").trim().toLowerCase();
   const conversationMode =
-    requestedMode === "new" || requestedMode === "reuse" || requestedMode === "auto"
-      ? (requestedMode as "auto" | "new" | "reuse")
-      : undefined;
+    input.conversationMode ??
+    (envMode === "new" || envMode === "reuse" || envMode === "auto"
+      ? (envMode as "auto" | "new" | "reuse")
+      : undefined);
 
   const submitted = await requestJson<BridgeJob>(config, "/v1/jobs", {
     method: "POST",

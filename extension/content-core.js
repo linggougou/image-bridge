@@ -449,8 +449,19 @@
   }
 
   const REUSE_KEY = "imageBridgeReferenceReuse";
-  const REUSE_MAX_JOBS = 5;
-  const REUSE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+  // No forced reuse cap: the caller decides with --conversation. A conversation
+  // stays reusable while the ordered reference set is unchanged.
+  const STORAGE_TIMEOUT_MS = 1_500;
+
+  // Storage IO must never block a job. An extension-context promise can stay
+  // pending forever (e.g. after an extension reload without a page reload), and
+  // that previously turned every reference job into a 5-minute client timeout.
+  function withTimeout(promise, timeoutMs) {
+    return Promise.race([
+      promise,
+      new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+  }
 
   function currentConversationId() {
     const match = location.pathname.match(/\/c\/([^/?#]+)/);
@@ -461,7 +472,10 @@
   // are lost on bridge restart, so they cannot own this state.
   async function readReuseRecord() {
     try {
-      const stored = await chrome.storage.local.get(REUSE_KEY);
+      const stored = await withTimeout(
+        chrome.storage.local.get(REUSE_KEY),
+        STORAGE_TIMEOUT_MS,
+      );
       return stored?.[REUSE_KEY] ?? null;
     } catch {
       return null;
@@ -470,7 +484,10 @@
 
   async function writeReuseRecord(record) {
     try {
-      await chrome.storage.local.set({ [REUSE_KEY]: record });
+      await withTimeout(
+        chrome.storage.local.set({ [REUSE_KEY]: record }),
+        STORAGE_TIMEOUT_MS,
+      );
     } catch {
       /* eligibility is best-effort; a storage error must not fail a job */
     }
@@ -478,7 +495,7 @@
 
   async function clearReuseRecord() {
     try {
-      await chrome.storage.local.remove(REUSE_KEY);
+      await withTimeout(chrome.storage.local.remove(REUSE_KEY), STORAGE_TIMEOUT_MS);
     } catch {
       /* ignore */
     }
@@ -488,8 +505,6 @@
     if (!record || !fingerprint) return false;
     if (record.fingerprint !== fingerprint) return false;
     if (!record.conversationId || record.conversationId !== currentConversationId()) return false;
-    if ((record.successfulJobs || 0) >= REUSE_MAX_JOBS) return false;
-    if (Date.now() - (record.firstSuccessAt || 0) >= REUSE_MAX_AGE_MS) return false;
     return true;
   }
 
