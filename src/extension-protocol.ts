@@ -33,6 +33,8 @@ export type ExtensionBridgeJob = {
   id: string;
   prompt: string;
   inputs?: WireReferenceImage[];
+  referenceFingerprint?: string;
+  conversationMode?: "auto" | "new" | "reuse";
   state: ExtensionJobState;
   createdAt: string;
   deadlineAt: string;

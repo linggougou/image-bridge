@@ -448,18 +448,109 @@
     }, Math.min(timeoutMs, 60_000));
   }
 
+  const REUSE_KEY = "imageBridgeReferenceReuse";
+  const REUSE_MAX_JOBS = 5;
+  const REUSE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+  function currentConversationId() {
+    const match = location.pathname.match(/\/c\/([^/?#]+)/);
+    return match ? match[1] : null;
+  }
+
+  // Reuse eligibility is stored extension-side: bridge job records expire and
+  // are lost on bridge restart, so they cannot own this state.
+  async function readReuseRecord() {
+    try {
+      const stored = await chrome.storage.local.get(REUSE_KEY);
+      return stored?.[REUSE_KEY] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function writeReuseRecord(record) {
+    try {
+      await chrome.storage.local.set({ [REUSE_KEY]: record });
+    } catch {
+      /* eligibility is best-effort; a storage error must not fail a job */
+    }
+  }
+
+  async function clearReuseRecord() {
+    try {
+      await chrome.storage.local.remove(REUSE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function reuseEligible(record, fingerprint) {
+    if (!record || !fingerprint) return false;
+    if (record.fingerprint !== fingerprint) return false;
+    if (!record.conversationId || record.conversationId !== currentConversationId()) return false;
+    if ((record.successfulJobs || 0) >= REUSE_MAX_JOBS) return false;
+    if (Date.now() - (record.firstSuccessAt || 0) >= REUSE_MAX_AGE_MS) return false;
+    return true;
+  }
+
+  // auto (default): reuse an eligible conversation, otherwise isolate.
+  // new: always isolate. reuse: require an eligible conversation, never
+  // silently fall back to a different one.
+  async function resolveConversation(job, timeoutMs) {
+    const mode = job.conversationMode || "auto";
+    const fingerprint = job.referenceFingerprint || null;
+    const eligible = reuseEligible(await readReuseRecord(), fingerprint);
+
+    if (mode === "new") {
+      await startCleanConversation(timeoutMs);
+      return;
+    }
+    if (mode === "reuse") {
+      if (!eligible) throw new Error("CONVERSATION_REUSE_UNAVAILABLE");
+      return;
+    }
+    if (eligible) return;
+    await startCleanConversation(timeoutMs);
+  }
+
+  async function recordReuseSuccess(job) {
+    const fingerprint = job.referenceFingerprint || null;
+    const conversationId = currentConversationId();
+    if (!fingerprint || !conversationId) return;
+    const existing = await readReuseRecord();
+    const sameConversation =
+      existing?.fingerprint === fingerprint && existing?.conversationId === conversationId;
+    const now = Date.now();
+    await writeReuseRecord({
+      fingerprint,
+      conversationId,
+      firstSuccessAt: sameConversation ? existing.firstSuccessAt : now,
+      lastSuccessAt: now,
+      successfulJobs: sameConversation ? (existing.successfulJobs || 0) + 1 : 1,
+    });
+  }
+
   async function executeJob(job) {
     if (!isAuthenticated()) throw new Error("NOT_AUTHENTICATED");
 
     const referenceInputs = job.inputs ?? [];
     const hasReferences = referenceInputs.length > 0;
 
-    // Reference jobs run from a conversation with no prior turns: stale context
-    // must not dominate the submitted reference, and attachment evidence has to
-    // be attributable to this job alone.
-    if (hasReferences) {
-      await startCleanConversation(job.timeoutMs || 300_000);
+    try {
+      if (hasReferences) {
+        await resolveConversation(job, job.timeoutMs || 300_000);
+      }
+      const result = await runJobBody(job, referenceInputs, hasReferences);
+      if (hasReferences) await recordReuseSuccess(job);
+      return result;
+    } catch (error) {
+      // A failed or interrupted reference job invalidates reuse eligibility.
+      if (hasReferences) await clearReuseRecord();
+      throw error;
     }
+  }
+
+  async function runJobBody(job, referenceInputs, hasReferences) {
 
     const composer = findVisible(COMPOSER_SELECTORS);
     if (!composer) throw new Error("TAB_NOT_READY");

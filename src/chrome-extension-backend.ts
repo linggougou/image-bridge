@@ -10,6 +10,7 @@ import type {
 import { ImageBridgeError, type ImageBridgeErrorCode } from "./errors.js";
 import type { ExtensionBridgeStatus } from "./extension-protocol.js";
 import { readExtensionBridgeToken } from "./extension-token.js";
+import { computeReferenceSetFingerprint } from "./reference-fingerprint.js";
 import { saveValidatedImage } from "./output.js";
 
 type BridgeJob = {
@@ -36,6 +37,7 @@ const BRIDGE_ERROR_CODES = new Set<ImageBridgeErrorCode>([
   "TAB_NOT_READY",
   "REFERENCE_IMAGE_UPLOAD_FAILED",
   "REFERENCE_IMAGE_NOT_SUBMITTED",
+  "CONVERSATION_REUSE_UNAVAILABLE",
   "BROWSER_FAILED",
 ]);
 
@@ -162,12 +164,25 @@ export async function generateWithChromeExtension(input: {
     );
   }
 
+  const referenceFingerprint =
+    referenceImages.length > 0 ? computeReferenceSetFingerprint(referenceImages) : undefined;
+
+  // auto (default): reuse an eligible conversation with an identical ordered
+  // reference set. new/reuse give callers explicit control.
+  const requestedMode = (process.env.IMAGE_BRIDGE_CONVERSATION || "").trim().toLowerCase();
+  const conversationMode =
+    requestedMode === "new" || requestedMode === "reuse" || requestedMode === "auto"
+      ? (requestedMode as "auto" | "new" | "reuse")
+      : undefined;
+
   const submitted = await requestJson<BridgeJob>(config, "/v1/jobs", {
     method: "POST",
     body: JSON.stringify({
       prompt,
       timeoutMs: config.extensionJobTimeoutMs,
       ...(referenceImages.length > 0 ? { inputs: referenceImages } : {}),
+      ...(referenceFingerprint ? { referenceFingerprint } : {}),
+      ...(conversationMode ? { conversationMode } : {}),
     }),
   });
 

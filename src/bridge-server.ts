@@ -200,6 +200,8 @@ export class ExtensionBridgeServer {
     prompt: string,
     timeoutMs = this.defaultJobTimeoutMs,
     inputs: WireReferenceImage[] = [],
+    referenceFingerprint?: string,
+    conversationMode?: "auto" | "new" | "reuse",
   ): PublicExtensionJob {
     if (!prompt.trim()) throw new Error("Prompt must not be empty.");
     if (prompt.length > this.maxPromptChars) throw new Error("Prompt is too long.");
@@ -209,6 +211,10 @@ export class ExtensionBridgeServer {
       id: randomUUID(),
       prompt,
       ...(inputs.length > 0 ? { inputs } : {}),
+      ...(inputs.length > 0 && referenceFingerprint
+        ? { referenceFingerprint: referenceFingerprint.slice(0, 200) }
+        : {}),
+      ...(inputs.length > 0 && conversationMode ? { conversationMode } : {}),
       state: "queued",
       createdAt: new Date(now).toISOString(),
       deadlineAt: new Date(now + timeoutMs).toISOString(),
@@ -343,7 +349,26 @@ export class ExtensionBridgeServer {
             ? Math.min(body.timeoutMs, 30 * 60_000)
             : this.defaultJobTimeoutMs;
         const inputs = normalizeReferenceImages(body.inputs);
-        jsonResponse(response, 201, this.submitJob(body.prompt, timeoutMs, inputs), origin);
+        const referenceFingerprint =
+          typeof body.referenceFingerprint === "string" ? body.referenceFingerprint : undefined;
+        const conversationMode =
+          body.conversationMode === "new" ||
+          body.conversationMode === "reuse" ||
+          body.conversationMode === "auto"
+            ? body.conversationMode
+            : undefined;
+        jsonResponse(
+          response,
+          201,
+          this.submitJob(
+            body.prompt,
+            timeoutMs,
+            inputs,
+            referenceFingerprint,
+            conversationMode,
+          ),
+          origin,
+        );
         return;
       }
 

@@ -41,6 +41,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                 codeText === "IMAGE_NOT_FOUND" ||
                 codeText === "REFERENCE_IMAGE_UPLOAD_FAILED" ||
                 codeText === "REFERENCE_IMAGE_NOT_SUBMITTED"
+                || codeText === "CONVERSATION_REUSE_UNAVAILABLE"
               ? codeText
               : "IMAGE_RETRIEVAL_FAILED";
       sendResponse({

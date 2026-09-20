@@ -19,6 +19,20 @@ async function loadExtensionPage(body: string, script = "", mainWorld = false) {
     globalThis.__bridgeMessages = [];
     globalThis.__bridgeListener = null;
     globalThis.chrome = {
+      storage: {
+        local: {
+          __data: {},
+          async get(key) {
+            return { [key]: this.__data[key] };
+          },
+          async set(items) {
+            Object.assign(this.__data, items);
+          },
+          async remove(key) {
+            delete this.__data[key];
+          },
+        },
+      },
       runtime: {
         sendMessage(message) {
           globalThis.__bridgeMessages.push(message);
@@ -693,6 +707,45 @@ describe("Chrome extension content script", () => {
       ok: false,
       error: { code: "REFERENCE_IMAGE_NOT_SUBMITTED" },
     });
+    await page.close();
+  });
+  it("fails a strict reuse job when no eligible conversation exists", async () => {
+    const page = await loadExtensionPage(
+      `<main>${composer}</main>`,
+      `globalThis.__sendCount = 0;
+       document.querySelector('#composer-submit-button').addEventListener('click', () => {
+         globalThis.__sendCount += 1;
+       });`,
+    );
+    const result = (await page.evaluate(
+      async ({ fingerprint }) =>
+        await new Promise((resolve) => {
+          const listener = globalThis.__bridgeListener;
+          listener(
+            {
+              type: "executeJob",
+              job: {
+                prompt: "use reference",
+                inputs: [
+                  { name: "one.png", mimeType: "image/png", byteLength: 8, bytesBase64: "iVBORw0KGgo=" },
+                ],
+                timeoutMs: 800,
+                referenceFingerprint: fingerprint,
+                conversationMode: "reuse",
+              },
+            },
+            {},
+            resolve,
+          );
+        }),
+      { fingerprint: "sha256:v1:deadbeef" },
+    )) as { ok: boolean; error: { code: string } };
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "CONVERSATION_REUSE_UNAVAILABLE" },
+    });
+    expect(await page.evaluate(() => globalThis.__sendCount)).toBe(0);
     await page.close();
   });
 });
