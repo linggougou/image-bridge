@@ -448,101 +448,11 @@
     }, Math.min(timeoutMs, 60_000));
   }
 
-  const REUSE_KEY = "imageBridgeReferenceReuse";
-  // No forced reuse cap: the caller decides with --conversation. A conversation
-  // stays reusable while the ordered reference set is unchanged.
-  const STORAGE_TIMEOUT_MS = 1_500;
-
-  // Storage IO must never block a job. An extension-context promise can stay
-  // pending forever (e.g. after an extension reload without a page reload), and
-  // that previously turned every reference job into a 5-minute client timeout.
-  function withTimeout(promise, timeoutMs) {
-    return Promise.race([
-      promise,
-      new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
-    ]);
-  }
-
-  function currentConversationId() {
-    const match = location.pathname.match(/\/c\/([^/?#]+)/);
-    return match ? match[1] : null;
-  }
-
-  // Reuse eligibility is stored extension-side: bridge job records expire and
-  // are lost on bridge restart, so they cannot own this state.
-  async function readReuseRecord() {
-    try {
-      const stored = await withTimeout(
-        chrome.storage.local.get(REUSE_KEY),
-        STORAGE_TIMEOUT_MS,
-      );
-      return stored?.[REUSE_KEY] ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  async function writeReuseRecord(record) {
-    try {
-      await withTimeout(
-        chrome.storage.local.set({ [REUSE_KEY]: record }),
-        STORAGE_TIMEOUT_MS,
-      );
-    } catch {
-      /* eligibility is best-effort; a storage error must not fail a job */
-    }
-  }
-
-  async function clearReuseRecord() {
-    try {
-      await withTimeout(chrome.storage.local.remove(REUSE_KEY), STORAGE_TIMEOUT_MS);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  function reuseEligible(record, fingerprint) {
-    if (!record || !fingerprint) return false;
-    if (record.fingerprint !== fingerprint) return false;
-    if (!record.conversationId || record.conversationId !== currentConversationId()) return false;
-    return true;
-  }
-
-  // auto (default): reuse an eligible conversation, otherwise isolate.
-  // new: always isolate. reuse: require an eligible conversation, never
-  // silently fall back to a different one.
+  // The background owns reuse eligibility and sends the decision with the job;
+  // this script performs no storage IO on the critical path.
   async function resolveConversation(job, timeoutMs) {
-    const mode = job.conversationMode || "auto";
-    const fingerprint = job.referenceFingerprint || null;
-    const eligible = reuseEligible(await readReuseRecord(), fingerprint);
-
-    if (mode === "new") {
-      await startCleanConversation(timeoutMs);
-      return;
-    }
-    if (mode === "reuse") {
-      if (!eligible) throw new Error("CONVERSATION_REUSE_UNAVAILABLE");
-      return;
-    }
-    if (eligible) return;
+    if (job.conversationDecision === "reuse") return;
     await startCleanConversation(timeoutMs);
-  }
-
-  async function recordReuseSuccess(job) {
-    const fingerprint = job.referenceFingerprint || null;
-    const conversationId = currentConversationId();
-    if (!fingerprint || !conversationId) return;
-    const existing = await readReuseRecord();
-    const sameConversation =
-      existing?.fingerprint === fingerprint && existing?.conversationId === conversationId;
-    const now = Date.now();
-    await writeReuseRecord({
-      fingerprint,
-      conversationId,
-      firstSuccessAt: sameConversation ? existing.firstSuccessAt : now,
-      lastSuccessAt: now,
-      successfulJobs: sameConversation ? (existing.successfulJobs || 0) + 1 : 1,
-    });
   }
 
   async function executeJob(job) {
@@ -551,18 +461,10 @@
     const referenceInputs = job.inputs ?? [];
     const hasReferences = referenceInputs.length > 0;
 
-    try {
-      if (hasReferences) {
-        await resolveConversation(job, job.timeoutMs || 300_000);
-      }
-      const result = await runJobBody(job, referenceInputs, hasReferences);
-      if (hasReferences) await recordReuseSuccess(job);
-      return result;
-    } catch (error) {
-      // A failed or interrupted reference job invalidates reuse eligibility.
-      if (hasReferences) await clearReuseRecord();
-      throw error;
+    if (hasReferences) {
+      await resolveConversation(job, job.timeoutMs || 300_000);
     }
+    return runJobBody(job, referenceInputs, hasReferences);
   }
 
   async function runJobBody(job, referenceInputs, hasReferences) {

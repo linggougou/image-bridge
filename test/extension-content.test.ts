@@ -709,14 +709,62 @@ describe("Chrome extension content script", () => {
     });
     await page.close();
   });
-  it("fails a strict reuse job when no eligible conversation exists", async () => {
+  it("honors a reuse decision from the background and stays in the conversation", async () => {
     const page = await loadExtensionPage(
-      `<main>${composer}</main>`,
-      `globalThis.__sendCount = 0;
-       document.querySelector('#composer-submit-button').addEventListener('click', () => {
-         globalThis.__sendCount += 1;
-       });`,
+      `<main>${composer}</main>
+       <button id="new-chat" data-testid="create-new-chat-button" type="button">New chat</button>
+       <section id="thread">
+         <article data-testid="conversation-turn-1">
+           <div data-message-author-role="user">earlier turn</div>
+         </article>
+       </section>`,
+      `
+        globalThis.__events = [];
+        document.querySelector('#new-chat').addEventListener('click', () => {
+          globalThis.__events.push('new-chat');
+        });
+        document.querySelector('#file-input').addEventListener('change', (event) => {
+          for (const file of event.target.files) {
+            const attachment = document.createElement('div');
+            attachment.dataset.testid = 'attachment-preview';
+            const image = document.createElement('img');
+            image.alt = 'Uploaded image';
+            image.src = URL.createObjectURL(file);
+            attachment.appendChild(image);
+            document.querySelector('#attachments').appendChild(attachment);
+          }
+        });
+        document.querySelector('#composer-submit-button').addEventListener('click', () => {
+          globalThis.__events.push('send');
+          const turn = document.createElement('article');
+          turn.dataset.testid = 'conversation-turn-2';
+          const userMessage = document.createElement('div');
+          userMessage.dataset.messageAuthorRole = 'user';
+          const attachment = document.createElement('div');
+          attachment.dataset.testid = 'attachment-preview';
+          const thumb = document.createElement('img');
+          thumb.alt = 'Uploaded image';
+          thumb.src = 'blob:https://chatgpt.com/reused';
+          attachment.appendChild(thumb);
+          userMessage.appendChild(attachment);
+          turn.appendChild(userMessage);
+          document.body.appendChild(turn);
+          const reply = document.createElement('article');
+          reply.dataset.testid = 'conversation-turn-3';
+          const message = document.createElement('div');
+          message.dataset.messageAuthorRole = 'assistant';
+          const image = document.createElement('img');
+          image.id = 'new-image';
+          image.src = 'data:image/png;base64,${pngBase64}';
+          image.width = 256;
+          image.height = 256;
+          message.appendChild(image);
+          reply.appendChild(message);
+          document.body.appendChild(reply);
+        });
+      `,
     );
+
     const result = (await page.evaluate(
       async ({ fingerprint }) =>
         await new Promise((resolve) => {
@@ -729,9 +777,9 @@ describe("Chrome extension content script", () => {
                 inputs: [
                   { name: "one.png", mimeType: "image/png", byteLength: 8, bytesBase64: "iVBORw0KGgo=" },
                 ],
-                timeoutMs: 800,
+                timeoutMs: 6000,
                 referenceFingerprint: fingerprint,
-                conversationMode: "reuse",
+                conversationDecision: "reuse",
               },
             },
             {},
@@ -739,15 +787,13 @@ describe("Chrome extension content script", () => {
           );
         }),
       { fingerprint: "sha256:v1:deadbeef" },
-    )) as { ok: boolean; error: { code: string } };
+    )) as { ok: boolean };
 
-    expect(result).toMatchObject({
-      ok: false,
-      error: { code: "CONVERSATION_REUSE_UNAVAILABLE" },
-    });
-    expect(await page.evaluate(() => globalThis.__sendCount)).toBe(0);
+    expect(result.ok).toBe(true);
+    expect(await page.evaluate(() => globalThis.__events)).toEqual(["send"]);
     await page.close();
   });
+
   it("does not block a reference job when storage never resolves", async () => {
     const page = await loadExtensionPage(
       `<main>${composer}</main>`,

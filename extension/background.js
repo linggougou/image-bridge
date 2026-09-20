@@ -69,6 +69,83 @@ async function reportContentReady(sender, message) {
   await postExtensionStatus(lastAuthenticated, true, url).catch(() => undefined);
 }
 
+const REUSE_KEY = "imageBridgeReferenceReuse";
+const REUSE_STORAGE_TIMEOUT_MS = 1500;
+
+// Conversation reuse is decided HERE, not in the content script: chrome.storage
+// is reliable in the service worker, while a content script's extension context
+// can stay pending forever after an extension reload.
+function withStorageTimeout(promise, timeoutMs = REUSE_STORAGE_TIMEOUT_MS) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+  ]);
+}
+
+function conversationIdFromUrl(url) {
+  const match = /\/c\/([^/?#]+)/.exec(url || "");
+  return match ? match[1] : null;
+}
+
+async function readReuseRecord() {
+  try {
+    const stored = await withStorageTimeout(chrome.storage.local.get(REUSE_KEY));
+    return stored?.[REUSE_KEY] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeReuseRecord(record) {
+  try {
+    await withStorageTimeout(chrome.storage.local.set({ [REUSE_KEY]: record }));
+  } catch {
+    /* eligibility is best-effort */
+  }
+}
+
+async function clearReuseRecord() {
+  try {
+    await withStorageTimeout(chrome.storage.local.remove(REUSE_KEY));
+  } catch {
+    /* ignore */
+  }
+}
+
+// Returns "reuse" | "new", or null when a strict reuse request cannot be met.
+async function resolveConversationDecision(job, tabUrl) {
+  const mode = job.conversationMode || "auto";
+  if (mode === "new") return "new";
+  const fingerprint = job.referenceFingerprint || null;
+  const record = await readReuseRecord();
+  const eligible =
+    Boolean(record && fingerprint) &&
+    record.fingerprint === fingerprint &&
+    Boolean(record.conversationId) &&
+    record.conversationId === conversationIdFromUrl(tabUrl);
+  if (mode === "reuse") return eligible ? "reuse" : null;
+  return eligible ? "reuse" : "new";
+}
+
+async function recordReuseSuccess(job, tabId) {
+  const fingerprint = job.referenceFingerprint || null;
+  if (!fingerprint) return;
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const conversationId = conversationIdFromUrl(tab?.url || "");
+  if (!conversationId) return;
+  const existing = await readReuseRecord();
+  const same =
+    existing?.fingerprint === fingerprint && existing?.conversationId === conversationId;
+  const now = Date.now();
+  await writeReuseRecord({
+    fingerprint,
+    conversationId,
+    firstSuccessAt: same ? existing.firstSuccessAt : now,
+    lastSuccessAt: now,
+    successfulJobs: same ? (existing.successfulJobs || 0) + 1 : 1,
+  });
+}
+
 async function failClaimedJob(job, code, message) {
   await bridgeFetch(`/v1/jobs/${encodeURIComponent(job.id)}/result`, {
     method: "POST",
@@ -113,13 +190,28 @@ async function pollBridge() {
       return;
     }
 
+    if ((job.inputs?.length ?? 0) > 0) {
+      const decision = await resolveConversationDecision(job, tab.url);
+      if (decision === null) {
+        await failClaimedJob(
+          job,
+          "CONVERSATION_REUSE_UNAVAILABLE",
+          "No eligible conversation for --conversation reuse; refusing to open a new one.",
+        );
+        return;
+      }
+      job.conversationDecision = decision;
+    }
+
     const result = await chrome.tabs.sendMessage(tab.id, { type: "executeJob", job });
     if (result?.ok === true) {
+      if ((job.inputs?.length ?? 0) > 0) await recordReuseSuccess(job, tab.id);
       await bridgeFetch(`/v1/jobs/${encodeURIComponent(job.id)}/result`, {
         method: "POST",
         body: JSON.stringify(result),
       });
     } else {
+      if ((job.inputs?.length ?? 0) > 0) await clearReuseRecord();
       await failClaimedJob(
         job,
         result?.error?.code || "EXTENSION_FAILED",
