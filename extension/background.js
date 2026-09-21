@@ -112,19 +112,50 @@ async function clearReuseRecord() {
   }
 }
 
-// Returns "reuse" | "new", or null when a strict reuse request cannot be met.
-async function resolveConversationDecision(job, tabUrl) {
+// Returns { decision, reason, details }; decision is "reuse" | "new" | null
+// (null = a strict reuse request that cannot be met). The reasons are kept so
+// the choice is observable from outside instead of having to be inferred.
+async function evaluateConversationDecision(job, tabUrl) {
   const mode = job.conversationMode || "auto";
-  if (mode === "new") return "new";
   const fingerprint = job.referenceFingerprint || null;
+  const currentConversationId = conversationIdFromUrl(tabUrl);
+  const details = {
+    mode,
+    hasFingerprint: Boolean(fingerprint),
+    currentConversationId,
+  };
+
+  if (mode === "new") {
+    return { decision: "new", reason: "mode_new", details };
+  }
+
   const record = await readReuseRecord();
+  details.hasRecord = Boolean(record);
+  details.recordFingerprintMatches = Boolean(record && fingerprint && record.fingerprint === fingerprint);
+  details.recordConversationId = record?.conversationId ?? null;
+  details.recordConversationMatches = Boolean(
+    record?.conversationId && record.conversationId === currentConversationId,
+  );
+
   const eligible =
     Boolean(record && fingerprint) &&
     record.fingerprint === fingerprint &&
     Boolean(record.conversationId) &&
-    record.conversationId === conversationIdFromUrl(tabUrl);
-  if (mode === "reuse") return eligible ? "reuse" : null;
-  return eligible ? "reuse" : "new";
+    record.conversationId === currentConversationId;
+
+  if (eligible) return { decision: "reuse", reason: "record_matches", details };
+  if (!record) return mode === "reuse"
+    ? { decision: null, reason: "no_record", details }
+    : { decision: "new", reason: "no_record", details };
+  if (!fingerprint) return mode === "reuse"
+    ? { decision: null, reason: "no_fingerprint", details }
+    : { decision: "new", reason: "no_fingerprint", details };
+  if (record.fingerprint !== fingerprint) return mode === "reuse"
+    ? { decision: null, reason: "fingerprint_changed", details }
+    : { decision: "new", reason: "fingerprint_changed", details };
+  return mode === "reuse"
+    ? { decision: null, reason: "conversation_mismatch", details }
+    : { decision: "new", reason: "conversation_mismatch", details };
 }
 
 async function recordReuseSuccess(job, tabId) {
@@ -191,16 +222,19 @@ async function pollBridge() {
     }
 
     if ((job.inputs?.length ?? 0) > 0) {
-      const decision = await resolveConversationDecision(job, tab.url);
-      if (decision === null) {
+      const evaluated = await evaluateConversationDecision(job, tab.url);
+      if (evaluated.decision === null) {
         await failClaimedJob(
           job,
           "CONVERSATION_REUSE_UNAVAILABLE",
-          "No eligible conversation for --conversation reuse; refusing to open a new one.",
+          `No eligible conversation for --conversation reuse; refusing to open a new one. ${JSON.stringify({
+            reason: evaluated.reason,
+            ...evaluated.details,
+          })}`,
         );
         return;
       }
-      job.conversationDecision = decision;
+      job.conversationDecision = evaluated.decision;
     }
 
     const result = await chrome.tabs.sendMessage(tab.id, { type: "executeJob", job });
