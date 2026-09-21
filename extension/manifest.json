@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Image Bridge ChatGPT Connector",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Connects a dedicated ChatGPT tab to the local image-bridge daemon.",
   "permissions": ["storage", "tabs"],
   "host_permissions": [

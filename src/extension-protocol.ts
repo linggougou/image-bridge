@@ -23,6 +23,8 @@ export type ExtensionBridgeStatus = {
   tabReady: boolean;
   tabUrl: string | null;
   extensionVersion: string | null;
+  reuseRecord: unknown;
+  lastConversationDecision: unknown;
   lastSeenAt: string | null;
   activeJobId: string | null;
 };

@@ -135,6 +135,8 @@ export class ExtensionBridgeServer {
   private chatgptAuthenticated = false;
   private tabReady = false;
   private extensionVersion: string | null = null;
+  private reuseRecord: unknown = null;
+  private lastConversationDecision: unknown = null;
   private tabUrl: string | null = null;
   private lastSeenAt: string | null = null;
   private boundPort: number | null = null;
@@ -191,6 +193,8 @@ export class ExtensionBridgeServer {
       tabReady: extensionConnected && this.tabReady,
       tabUrl: this.tabUrl,
       extensionVersion: this.extensionVersion,
+      reuseRecord: this.reuseRecord,
+      lastConversationDecision: this.lastConversationDecision,
       lastSeenAt: this.lastSeenAt,
       activeJobId: this.activeClaimedJob()?.id ?? null,
     };
@@ -333,6 +337,9 @@ export class ExtensionBridgeServer {
         this.tabUrl = typeof body.url === "string" ? body.url.slice(0, 2_000) : null;
         this.extensionVersion =
           typeof body.version === "string" ? body.version.slice(0, 40) : null;
+        // Observation only: lets the reuse chain be inspected without a job.
+        this.reuseRecord = body.reuseRecord ?? null;
+        this.lastConversationDecision = body.lastDecision ?? null;
         this.lastSeenAt = new Date().toISOString();
         jsonResponse(response, 200, this.getStatus(), origin);
         return;

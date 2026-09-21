@@ -34,7 +34,12 @@ async function bridgeFetch(path, init = {}) {
   return response;
 }
 
+// Last decision, kept so the reuse chain can be observed from outside without
+// running a job (and therefore without creating any conversation).
+let lastConversationDecision = null;
+
 async function postExtensionStatus(authenticated, tabReady, url) {
+  const record = await readReuseRecord();
   return bridgeFetch("/v1/extension/status", {
     method: "POST",
     body: JSON.stringify({
@@ -42,6 +47,15 @@ async function postExtensionStatus(authenticated, tabReady, url) {
       tabReady,
       url,
       version: chrome.runtime?.getManifest?.()?.version || "",
+      reuseRecord: record
+        ? {
+            fingerprint: String(record.fingerprint || "").slice(0, 80),
+            conversationId: String(record.conversationId || "").slice(0, 80),
+            successfulJobs: Number(record.successfulJobs || 0),
+            lastSuccessAt: Number(record.lastSuccessAt || 0),
+          }
+        : null,
+      lastDecision: lastConversationDecision,
     }),
   });
 }
@@ -235,6 +249,12 @@ async function pollBridge() {
         return;
       }
       job.conversationDecision = evaluated.decision;
+      lastConversationDecision = {
+        at: Date.now(),
+        decision: evaluated.decision,
+        reason: evaluated.reason,
+        details: evaluated.details,
+      };
     }
 
     const result = await chrome.tabs.sendMessage(tab.id, { type: "executeJob", job });
