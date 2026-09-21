@@ -79,3 +79,38 @@ Chrome 历史时间戳：`6ab01a95` 首访 02:07:19（第 1 步，CLI 已回报�
 - 增加**分级诊断**：错误/结果中带"卡在哪个阶段"（会话准备 / 上传就绪 / 提交后校验 /
   等待助手回复 / 等待出图），以及判定用的关键值（是否读到记录、两个会话 ID、最终判定）
 - 在判定链路具备自证能力之前，暂停真机验证，避免继续产生无用会话与限流风险
+
+## 真机验证通过（2026-09-21，扩展 0.3.4）
+
+| 步骤 | 判定 | 记录计数 | 结果 |
+| --- | --- | --- | --- |
+| 1. 参考图 A | `new` / `reason: no_record` | 写入后 `successfulJobs: 1` | ok，35 秒，新建 `6ab09dad` |
+| 2. 同一张 A | **`reuse` / `reason: record_matches`** | **`successfulJobs: 2`** | ok，36 秒，**同一会话 `6ab09dad`** |
+
+第 2 次判定明细（直接观测，非推断）：
+`hasRecord: true`、`recordFingerprintMatches: true`、`recordConversationMatches: true`、
+`currentConversationId == recordConversationId == 6ab09dad`。
+
+用户端确认：**该会话内有两条消息，各自都带参考图缩略图**。
+
+关键：`/v1/status` 暴露的 `reuseRecord` 与 `lastConversationDecision` 让整条判定链可观测，
+无需再靠 Chrome 历史时间戳或超时长度反推——这正是本次能一次定性的原因。
+
+### 仍未验证
+- 取不同参考图时应新建会话（指纹变化分支）在 0.3.4 上尚未复测
+- `--conversation new` / `reuse` 的显式行为未做真机验证
+- 分阶段诊断（卡在哪个阶段）与写入确认仍未实现
+
+### 指纹变化分支验证（2026-09-21，0.3.4）
+
+| 输入 | decision | reason | 会话 |
+| --- | --- | --- | --- |
+| 参考图 A（首次，无记录） | new | `no_record` | 新建 `6ab09dad` |
+| 参考图 A（再次，记录匹配） | **reuse** | `record_matches` | **仍是 `6ab09dad`** |
+| 参考图 B（指纹变化） | new | `fingerprint_changed` | 新建 `6ab0a1b8` |
+
+第三条的 details 很关键：`hasRecord: true`、`recordConversationMatches: true`、
+**`recordFingerprintMatches: false`** —— 记录存在、标签页也在记录的那个会话上，
+唯一变化的是参考图指纹，判定因此正确地选择了新建。
+
+三条判定理由各自独立命中，说明判定链的区分能力正确（不是"碰巧新建/碰巧复用"）。
