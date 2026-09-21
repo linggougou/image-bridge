@@ -58,6 +58,21 @@ image-bridge generate \
   --output <输出路径>.png
 ```
 
+会话策略（可选，默认 `auto`）：
+
+| 取值 | 含义 |
+| --- | --- |
+| `auto` | 参考图集合不变则复用同一会话；换了参考图则新建 |
+| `new` | 强制新建（需要独立结果时用） |
+| `reuse` | 必须复用已记录的会话，否则在上传前失败（`CONVERSATION_REUSE_UNAVAILABLE`） |
+
+```bash
+image-bridge generate --backend chrome-extension \
+  --input ref.png --prompt "..." --output out.png --conversation new
+```
+
+注意：复用会话意味着历史提示词与生成结果可能影响新输出；需要干净结果时选 `new`。
+
 - 输出路径已存在时**会失败**；确需覆盖才加 `--force`
 - 输出目录需已存在且可写
 - stdout 是**单行 JSON**；退出码非 0 表示失败

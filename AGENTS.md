@@ -88,6 +88,28 @@ node dist/cli.js generate \
 - stdout 是**单行 JSON**；失败时退出码非 0 且 `ok: false`
 - `--input` 仅 `chrome-extension` 后端支持；`gemini` / Playwright `chatgpt` 后端会返回 `UNSUPPORTED_INPUT`
 
+## 4.5 会话复用（默认开启）
+
+参考图任务默认 `--conversation auto`：参考图集合（有序）不变、且专用标签页
+仍在记录的那个会话上时**复用该会话**，否则新建。`new` 强制新建，`reuse` 要求
+必须命中、否则在上传前失败（`CONVERSATION_REUSE_UNAVAILABLE`）。
+
+判定在扩展的 service worker 里，资格记录存 `chrome.storage.local`。
+**复用的是会话，不是上次的上传**——每个任务仍各自附加文件并校验新用户轮次里的附件数。
+
+排查用（只读、不产生会话）：
+
+```bash
+TOKEN=$(cat ~/.image-bridge/extension-bridge-token)
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:47831/v1/status
+```
+
+看 `reuseRecord` 与 `lastConversationDecision`（含 `reason` 与 `details`）。
+
+**重要操作提示**：每次「重新加载扩展」后，**还要刷新专用 ChatGPT 标签页**。
+只重载扩展而不刷新页面时，页面里跑的仍是旧内容脚本，会出现"扩展版本已更新、
+行为却像旧版/卡死"的现象（已多次踩到）。
+
 ## 5. 参考图任务的执行契约（不要绕过）
 
 带 `--input` 的任务会：

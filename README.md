@@ -226,6 +226,49 @@ Successful generation emits one JSON object:
 
 Stdout is machine-readable. Login and diagnostic guidance go to stderr.
 
+## Conversation Reuse
+
+Reference-image jobs decide their conversation in the extension's service
+worker, from the ordered reference set and the current conversation. Select the
+policy per call:
+
+```bash
+node dist/cli.js generate --backend chrome-extension \
+  --input ref.png --prompt "..." --conversation auto   # default
+```
+
+| Mode | Behavior |
+| --- | --- |
+| `auto` (default) | Reuse the eligible conversation when the ordered reference set is unchanged and the tab is still on that conversation; otherwise start a new one |
+| `new` | Always start a new conversation (explicit isolation) |
+| `reuse` | Require an eligible matching conversation; otherwise fail before uploading with `CONVERSATION_REUSE_UNAVAILABLE` and never silently open a different one |
+
+`IMAGE_BRIDGE_CONVERSATION` is accepted as an environment fallback.
+
+The eligibility record lives in `chrome.storage.local`, keyed by the ordered
+reference-set fingerprint and the conversation id. The fingerprint is computed
+in Node from the validated image bytes (plus MIME type, count and order), so
+renaming or moving identical files does not change it.
+
+**Reuse applies to the conversation, never to the previous upload.** Every
+reference job still attaches its own files and still verifies that the newly
+submitted user turn carries exactly the expected number of attachments.
+
+Tradeoff: reusing a conversation keeps earlier prompts and generated images in
+context, which can influence later output. Use `--conversation new` when you
+need independent results.
+
+Inspect the decision chain at any time (read-only, no job, no conversation):
+
+```bash
+TOKEN=$(cat ~/.image-bridge/extension-bridge-token)
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:47831/v1/status
+# reuseRecord + lastConversationDecision: { decision, reason, details }
+```
+
+Reason codes: `mode_new`, `no_record`, `no_fingerprint`, `fingerprint_changed`,
+`conversation_mismatch`, `record_matches`.
+
 ## Reference Images
 
 Reference images are supported by the `chrome-extension` backend. Pass one or
@@ -326,6 +369,7 @@ Important codes include:
 - `UNSUPPORTED_INPUT`
 - `REFERENCE_IMAGE_UPLOAD_FAILED`
 - `REFERENCE_IMAGE_NOT_SUBMITTED`
+- `CONVERSATION_REUSE_UNAVAILABLE`
 
 If a session expires, run the matching `login --backend ...` command again. The
 CLI never attempts to bypass sign-in, CAPTCHA, account checks, or other browser
@@ -367,6 +411,17 @@ npm run build
 Automated tests use synthetic ChatGPT and Gemini pages and do not require a real
 account or network access. Live smoke tests are manual because both web UIs are
 private, changeable interfaces rather than stable public APIs.
+
+## Documentation
+
+| Document | Purpose |
+| --- | --- |
+| [AGENTS.md](AGENTS.md) | Step-by-step bootstrap and usage contract for an agent |
+| [docs/agent-usage.md](docs/agent-usage.md) | Standalone usage guide to hand to an agent in another project |
+| [SECURITY.md](SECURITY.md) | Trust boundary, token handling, refusal to bypass checks |
+| [docs/conversation-reuse-requirement.md](docs/conversation-reuse-requirement.md) | Reuse rules, reason codes, verified branches, explicit non-goals |
+| [docs/reference-image-investigation.md](docs/reference-image-investigation.md) | How reference-image delivery was diagnosed and verified |
+| [docs/competitive-review.md](docs/competitive-review.md) | Comparison against a peer project and what was adopted or deferred |
 
 ## Scope
 
